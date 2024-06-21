@@ -33,7 +33,7 @@ log = { version = "0.4", default-features = false }
 esp-idf-svc = { version = "0.48", default-features = false }
 esp-idf-hal = "=0.43.1"
 embedded-hal = "1.0.0"
-embedded-svc = "=0.22.0"
+embedded-svc = "=0.27.1"
 heapless = "0.8.0"
 dotenv = "0.15.0"
 image = "0.25.1"
