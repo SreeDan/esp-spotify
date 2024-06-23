@@ -1,4 +1,4 @@
-workspace = { members = ["graphics", "graphics_sim"] }
+workspace = { members = [".", "graphics", "graphics_sim"] }
 [package]
 name = "spotify-esp"
 version = "0.1.0"
@@ -9,7 +9,7 @@ rust-version = "1.71"
 
 [[bin]]
 name = "spotify-esp"
-harness = false # do not use the built in cargo test harness -> resolve rust-analyzer errors
+harness = false      # do not use the built in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]
 opt-level = "s"
@@ -26,7 +26,11 @@ std = ["alloc", "esp-idf-svc/binstart", "esp-idf-svc/std"]
 alloc = ["esp-idf-svc/alloc"]
 nightly = ["esp-idf-svc/nightly"]
 experimental = ["esp-idf-svc/experimental"]
-embassy = ["esp-idf-svc/embassy-sync", "esp-idf-svc/critical-section", "esp-idf-svc/embassy-time-driver"]
+embassy = [
+  "esp-idf-svc/embassy-sync",
+  "esp-idf-svc/critical-section",
+  "esp-idf-svc/embassy-time-driver",
+]
 
 [dependencies]
 log = { version = "0.4", default-features = false }

@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+embedded-graphics = "0.8.1"
+embedded-graphics-simulator = "0.6.0"
+embedded-graphics-core = "0.4.0"
+reqwest = { version = "0.12.4", features = ["blocking"] }
+image = "0.25.1"
+graphics = { path = "../graphics" }
