@@ -33,15 +33,6 @@ fn main() {
 
     wifi(&mut wifi_driver);
 
-    let httpconnection = EspHttpConnection::new(&HttpConfig {
-        // use_global_ca_store: true,
-        crt_bundle_attach: Some(esp_crt_bundle_attach),
-        ..Default::default()
-    })
-    .expect("Could not establish http connection");
-
-    let mut httpclient = Client::wrap(httpconnection);
-
     let check_playback = thread::spawn(|| {
         loop {
             let httpconnection = EspHttpConnection::new(&HttpConfig {
@@ -53,7 +44,8 @@ fn main() {
 
             let mut httpclient = Client::wrap(httpconnection);
             let url_root = include_str!("../api_url.txt");
-            let formatted_url = std::format!("{}/current_playback", url_root);
+            // let formatted_url = std::format!("{}/current_playback", url_root);
+            let formatted_url = "http://23.20.233.1:8080/current_playback";
 
             let request = httpclient
                 .get(&formatted_url)
@@ -61,19 +53,23 @@ fn main() {
 
             let mut response = request.submit().expect("could not get response");
 
-            let mut buf = vec![0u8; response.content_len().unwrap() as usize];
-            response.read_exact(&mut buf).unwrap();
+            let mut playing_buf = vec![0u8; response.content_len().unwrap() as usize];
+            let mut image_buf = vec![0u8; 300 * 300];
 
-            let response_str = std::str::from_utf8(&buf);
-            let playing_json: Result<Option<CurrentlyPlaying>> =
-                serde_json::from_slice(&buf).unwrap();
+            response.read_exact(&mut playing_buf).unwrap();
+
+            let response_str = std::str::from_utf8(&playing_buf);
+
+            let playing_json: Result<Option<CurrentlyPlaying>, serde_json::Error> =
+                serde_json::from_slice(&playing_buf);
 
             if let Err(_) = playing_json {
                 Delay::new_default().delay_ms(5000);
                 continue;
             }
 
-            println!("{:?}", playing_json);
+            println!("{:?}", response_str);
+            println!("{:#?}", playing_json);
 
             Delay::new_default().delay_ms(1000);
         }
@@ -102,7 +98,6 @@ fn wifi(wifi_driver: &mut BlockingWifi<EspWifi>) {
 
     wifi_driver.start().unwrap();
     wifi_driver.connect().unwrap();
-    let mut seconds = 1;
 
     println!("Waiting for wifi connection");
     wifi_driver.wait_netif_up().unwrap();
