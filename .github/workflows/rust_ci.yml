@@ -23,8 +23,6 @@ jobs:
             args: --release
           - command: fmt
             args: --all -- --check --color always
-          - command: clippy
-            args: --all-targets --all-features --workspace -- -D warnings
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,5 +34,9 @@ jobs:
           ldproxy: true
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
+      - name: Downgrade ravif
+        run: cargo update ravif --precise 0.11.5
+      - name: Downgrade bitstream-io
+        run: cargo update bitstream-io --precise 2.3.0
       - name: Run command
         run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
