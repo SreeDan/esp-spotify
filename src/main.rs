@@ -1,11 +1,15 @@
+use display_interface_spi::SPIInterfaceNoCS;
+// use display_interface_spi::SPIInterfaceNoCS;
 use dotenv::dotenv;
+use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
 use embedded_hal::delay::DelayNs;
 use embedded_svc::http::{client::Client, Headers, Status};
 use esp_idf_hal::{
     delay::{Delay, FreeRtos},
-    gpio::{IOPin, PinDriver},
+    gpio::{AnyIOPin, IOPin, PinDriver},
     io::Read,
-    peripherals::Peripherals,
+    peripherals::{self, Peripherals},
+    spi::{self, SpiDeviceDriver, SpiDriver, SpiDriverConfig, SPI2},
     sys::{esp_crt_bundle_attach, esp_get_free_heap_size, esp_get_minimum_free_heap_size},
 };
 use esp_idf_svc::{
@@ -14,6 +18,7 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition,
     wifi::{BlockingWifi, EspWifi},
 };
+use ili9341::Ili9341;
 use log::{error, info};
 use models::CurrentlyPlaying;
 use once_cell::sync::Lazy;
@@ -38,16 +43,44 @@ fn main() {
     let sys_loop = EspSystemEventLoop::take().unwrap();
     let nvs = EspDefaultNvsPartition::take().unwrap();
 
+    let pins = peripherals.pins;
+
     let mut btn1_status = ButtonStatus::High;
     let mut btn2_status = ButtonStatus::High;
     let mut btn3_status = ButtonStatus::High;
-    let mut btn_pin1 = PinDriver::input(peripherals.pins.gpio5.downgrade()).unwrap();
-    let mut btn_pin2 = PinDriver::input(peripherals.pins.gpio1.downgrade()).unwrap();
-    let mut btn_pin3 = PinDriver::input(peripherals.pins.gpio17.downgrade()).unwrap();
+    let mut btn_pin1 = PinDriver::input(pins.gpio5.downgrade()).unwrap();
+    let mut btn_pin2 = PinDriver::input(pins.gpio1.downgrade()).unwrap();
+    let mut btn_pin3 = PinDriver::input(pins.gpio2.downgrade()).unwrap();
     btn_pin1.set_pull(esp_idf_hal::gpio::Pull::Up).unwrap();
     btn_pin2.set_pull(esp_idf_hal::gpio::Pull::Up).unwrap();
     btn_pin3.set_pull(esp_idf_hal::gpio::Pull::Up).unwrap();
     let mut btn_lock = false;
+
+    let sclk = pins.gpio39;
+    let mosi = pins.gpio11;
+
+    // let cs = PinDriver::output(pins.gpio17).unwrap();
+    let miso = pins.gpio13;
+    let dc = PinDriver::output(pins.gpio15).unwrap();
+    let rst = PinDriver::output(pins.gpio16).unwrap();
+
+    let spi = peripherals.spi2;
+    let driver =
+        SpiDriver::new::<SPI2>(spi, sclk, mosi, Some(miso), &SpiDriverConfig::new()).unwrap();
+    let config = spi::config::Config::default().baudrate(esp_idf_hal::units::Hertz(10 * 1_000_000));
+
+    let spi_device = SpiDeviceDriver::new(&driver, Some(pins.gpio17), &config).unwrap();
+
+    let spidispplayinterface = SPIInterfaceNoCS::new(spi_device, dc);
+
+    let mut display = Ili9341::new(
+        spidispplayinterface,
+        rst,
+        &mut esp_idf_hal::delay::FreeRtos,
+        ili9341::Orientation::Landscape,
+        ili9341::DisplaySize240x320,
+    )
+    .expect("Failed to initialize LCD ILI9341.");
 
     let mut wifi_driver = BlockingWifi::wrap(
         EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs)).unwrap(),

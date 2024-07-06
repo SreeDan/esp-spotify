@@ -1,3 +1,13 @@
+use display_interface_spi::SPIInterfaceNoCS;
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    geometry::{Dimensions, Point},
+    pixelcolor::{PixelColor, Rgb565},
+    primitives::{Primitive, PrimitiveStyle, Rectangle, StyledDrawable},
+};
+use esp_idf_hal::gpio::{Gpio16, Output, OutputPin, PinDriver};
+use ili9341::Ili9341;
+
 fn rgb888_to_rgb565(r: u8, g: u8, b: u8) -> u16 {
     let red = (r >> 3) as u16;
     let green = (g >> 2) as u16;
@@ -21,3 +31,13 @@ pub fn convert_vec_rgb888_to_rgb565(rgb888_vec: &Vec<u8>) -> Vec<u8> {
     rgb565_vec
 }
 
+pub fn fill_display<T>(display: &mut T, color: Rgb565)
+where
+    T: DrawTarget<Color = Rgb565>,
+{
+    let display_area = Rectangle::new(Point::new(0, 0), display.bounding_box().size);
+
+    let fill_style = PrimitiveStyle::with_fill(color);
+
+    display_area.draw_styled(&fill_style, display);
+}
