@@ -34,6 +34,12 @@ jobs:
           ldproxy: true
       - name: Enable caching
         uses: Swatinem/rust-cache@v2
+      - name: Create env txt files
+        run: | 
+          touch api_url.txt
+          touch auth_token.txt
+          touch wifi_ssid.txt
+          touch wifi_password.txt
       - name: Downgrade ravif
         run: cargo update ravif --precise 0.11.5
       - name: Downgrade bitstream-io
