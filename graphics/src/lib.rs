@@ -20,4 +20,3 @@ pub fn convert_vec_rgb888_to_rgb565(rgb888_vec: &Vec<u8>) -> Vec<u8> {
 
     rgb565_vec
 }
-
