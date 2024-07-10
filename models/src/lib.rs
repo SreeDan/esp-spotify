@@ -3,27 +3,27 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artist {
-    name: String,
-    url: Option<String>,
+    pub name: String,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
-    name: String,
-    artists: Vec<Artist>,
-    image_url: Option<String>,
-    url: Option<String>,
-    duration: u32,
+    pub name: String,
+    pub artists: Vec<Artist>,
+    pub image_url: Option<String>,
+    pub url: Option<String>,
+    pub duration: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurrentlyPlaying {
-    device: Device,
-    track: Track,
-    progress_secs: u32,
-    shuffled: bool,
-    playing: bool,
-    repeat_status: RepeatState,
+    pub device: Device,
+    pub track: Track,
+    pub progress_secs: u32,
+    pub shuffled: bool,
+    pub playing: bool,
+    pub repeat_status: RepeatState,
 }
 
 // Holds the structs from the `rspotify` package. It's easier to just copy the structs because it
