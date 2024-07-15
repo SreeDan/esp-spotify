@@ -22,7 +22,7 @@ use models::CurrentlyPlaying;
 use once_cell::sync::Lazy;
 use std::{
     sync::{Arc, Mutex},
-    thread::{self},
+    thread,
     time::Duration,
 };
 
@@ -33,7 +33,7 @@ enum ButtonStatus {
 }
 
 enum Signal {
-    ChangeSong(Option<CurrentlyPlaying>),
+    ChangeSong(Option<CurrentlyPlaying>, Option<Arc<[u8]>>),
     UpdateProgress(Option<u32>),
 }
 
@@ -48,6 +48,7 @@ fn main() {
 
     let pins = peripherals.pins;
 
+    // Set up buttons to the right GPIO pins
     let mut btn1_status = ButtonStatus::High;
     let mut btn2_status = ButtonStatus::High;
     let mut btn3_status = ButtonStatus::High;
@@ -59,10 +60,10 @@ fn main() {
     btn_pin3.set_pull(esp_idf_hal::gpio::Pull::Up).unwrap();
     let mut btn_lock = false;
 
+    // Display setup
     let sclk = pins.gpio39;
     let mosi = pins.gpio11;
 
-    // let cs = PinDriver::output(pins.gpio17).unwrap();
     let miso = pins.gpio13;
     let dc = PinDriver::output(pins.gpio15).unwrap();
     let rst = PinDriver::output(pins.gpio16).unwrap();
@@ -83,10 +84,13 @@ fn main() {
         spidispplayinterface,
         rst,
         &mut esp_idf_hal::delay::FreeRtos,
-        ili9341::Orientation::Portrait,
+        ili9341::Orientation::PortraitFlipped,
         ili9341::DisplaySize240x320,
     )
     .expect("Failed to initialize LCD ILI9341.");
+
+    const IMAGE_HEIGHT: u32 = 240;
+    const IMAGE_WIDTH: u32 = 240;
 
     graphics::fill_display(&mut display, Rgb565::BLACK);
 
@@ -120,13 +124,16 @@ fn main() {
     let stored_song_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let stored_song_position: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
 
+    print_memory_info();
+
+    // This requests the server and gets the current spotify playback in a CurrentlyPlaying struct
     let check_playback = thread::Builder::new()
-        .stack_size(64 * 1024)
+        .stack_size(135 * 1024)
         .spawn(move || {
             loop {
                 let httpconnection = EspHttpConnection::new(&HttpConfig {
-                    // use_global_ca_store: true,
-                    crt_bundle_attach: Some(esp_crt_bundle_attach),
+                    use_global_ca_store: true,
+                    crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
                     ..Default::default()
                 })
                 .expect("Could not establish http connection");
@@ -148,6 +155,8 @@ fn main() {
                 let playing_json: Result<Option<CurrentlyPlaying>, serde_json::Error> =
                     serde_json::from_slice(&playing_buf);
 
+                info!("{:?}", playing_json);
+
                 if let Err(_) = playing_json {
                     Delay::new_default().delay_ms(5000);
                     continue;
@@ -156,13 +165,15 @@ fn main() {
                 let mut prev_song_url = stored_song_url.lock().unwrap();
                 let mut prev_song_position = stored_song_position.lock().unwrap();
 
+                // Depending on the previous and current states, it'll decide what to draw to the
+                // display in order to save ram
                 let playing_data = match playing_json {
                     Ok(Some(data)) => data,
                     _ => {
                         if prev_song_url.is_some() || prev_song_position.is_some() {
                             *prev_song_url = None;
                             *prev_song_position = None;
-                            transmitter.send(Signal::ChangeSong(None));
+                            transmitter.send(Signal::ChangeSong(None, None));
                             transmitter.send(Signal::UpdateProgress(None));
                         }
                         Delay::new_default().delay_ms(5000);
@@ -174,8 +185,19 @@ fn main() {
                     || (prev_song_url.is_some()
                         && *prev_song_url != Some(playing_data.track.name.clone()))
                 {
+                    let mut image_bytes = None::<Arc<[u8]>>;
                     *prev_song_url = Some(playing_data.track.name.clone());
-                    transmitter.send(Signal::ChangeSong(Some(playing_data.clone())));
+                    image_bytes = get_image_bytes(
+                        &*API_URL_ROOT,
+                        &mut httpclient,
+                        &playing_data.track.image_url.clone().unwrap(),
+                        IMAGE_HEIGHT,
+                        IMAGE_WIDTH,
+                    );
+                    transmitter.send(Signal::ChangeSong(
+                        Some(playing_data.clone()),
+                        image_bytes.clone(),
+                    ));
                 }
 
                 if prev_song_position.is_none()
@@ -191,8 +213,9 @@ fn main() {
         })
         .unwrap();
 
+    print_memory_info();
     let control_playback_thread = thread::Builder::new()
-        .stack_size(8 * 1024)
+        .stack_size(4 * 1024)
         .spawn(move || loop {
             if btn_pin1.is_high() && btn1_status == ButtonStatus::Low {
                 info!("Button 1 Pressed - Attempting to skip track");
@@ -241,10 +264,17 @@ fn main() {
     loop {
         match receiver.recv() {
             Ok(received_signal) => match received_signal {
-                Signal::ChangeSong(optional_currently_playing) => {
+                Signal::ChangeSong(optional_currently_playing, optional_image_buf) => {
                     match optional_currently_playing {
                         Some(currently_playing) => {
-                            println!("Attempting to draw image ");
+                            if currently_playing.track.image_url.is_some() {
+                                if optional_image_buf.is_some() {
+                                    graphics::draw_album_cover(
+                                        &mut display,
+                                        optional_image_buf.as_deref(),
+                                    );
+                                }
+                            }
                             graphics::draw_title_and_artist(
                                 &mut display,
                                 currently_playing.track.name,
@@ -307,6 +337,61 @@ fn wifi(wifi_driver: &mut BlockingWifi<EspWifi>) {
         "Connected to IP {:?}",
         wifi_driver.wifi().sta_netif().get_ip_info()
     );
+}
+
+// Gets the image bytes from the server. I tried to directly call the image url, process the
+// image bytes and resize the image, but it was too computationally expensive, so I offloaded that
+// logic to the server
+fn get_image_bytes(
+    api_url_root: &String,
+    httpclient: &mut Client<EspHttpConnection>,
+    image_url: &String,
+    image_height: u32,
+    image_width: u32,
+) -> Option<Arc<[u8]>> {
+    let formatted_url = std::format!(
+        "{}/get_resized_image?image_url={}&width={}&height={}",
+        api_url_root,
+        image_url,
+        image_width,
+        image_height
+    );
+    let request = match httpclient.get(&formatted_url) {
+        Ok(req) => req,
+        Err(err) => {
+            error!("Could not initialize request to get image: {:?}", err);
+            return None;
+        }
+    };
+
+    let response = request.submit();
+    if let Err(_) = response {
+        error!("could not get response for image");
+        return None;
+    }
+
+    let mut response = response.unwrap();
+    if response.status() != 200 {
+        error!("status code for getting image: {:?}", response.status());
+        return None;
+    }
+
+    let length = response
+        .header("content-length")
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+
+    let mut image_bytes = vec![0u8; length];
+
+    let mut read = 0;
+    while read < length {
+        read += response.read(&mut image_bytes[read..]).unwrap();
+    }
+
+    return Some(Arc::from(graphics::convert_vec_rgb888_to_rgb565(
+        &image_bytes,
+    )));
 }
 
 fn toggle_playback(api_url_root: &String, auth_token: &String) -> bool {

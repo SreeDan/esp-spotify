@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use embedded_canvas::CanvasAt;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -13,7 +11,6 @@ use embedded_graphics::{
 };
 use embedded_layout::{layout::linear::LinearLayout, prelude::*};
 use ili9341::DisplayError;
-use image::{io::Reader as ImageReader, DynamicImage, RgbImage};
 
 pub fn rgb888_to_rgb565(r: u8, g: u8, b: u8) -> u16 {
     let red = (r >> 3) as u16;
@@ -65,27 +62,13 @@ where
     );
 }
 
-pub fn draw_album_cover<T>(display: &mut T, image_bytes: Vec<u8>)
+pub fn draw_album_cover<T>(display: &mut T, image_bytes: Option<&[u8]>)
 where
     T: DrawTarget<Color = Rgb565>,
 {
     let mut album_canvas = CanvasAt::new(Point::zero(), Size::new(240, 240));
 
-    let img = ImageReader::new(Cursor::new(image_bytes))
-        .with_guessed_format()
-        .expect("Failed to guess image format")
-        .decode()
-        .expect("Failed to decode image");
-
-    let rgb_imag: RgbImage = img.into_rgb8();
-    let resized_image = DynamicImage::ImageRgb8(rgb_imag)
-        .resize(240, 240, image::imageops::FilterType::Nearest)
-        .to_rgb8();
-
-    let raw = resized_image.clone().into_raw();
-    let rgb565: Vec<u8> = convert_vec_rgb888_to_rgb565(&raw);
-
-    let out: ImageRaw<Rgb565> = ImageRaw::new(&rgb565, resized_image.width());
+    let out: ImageRaw<Rgb565> = ImageRaw::new(&image_bytes.unwrap(), 240);
     out.draw(&mut album_canvas).expect("Could not draw image");
 
     draw_canvas(display, album_canvas, Rgb565::BLACK);
@@ -99,7 +82,6 @@ where
     if displayed_title.len() > 23 {
         displayed_title = title[..22].to_string();
         displayed_title.push_str("..")
-        // displayed_title =  &title[..22].to_owned() + "..".to_string();
     }
 
     let mut displayed_artist = artist.clone();

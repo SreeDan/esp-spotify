@@ -51,7 +51,6 @@ display-interface-spi = "0.4.1"
 models = { path = "models" }
 graphics = { path = "graphics" }
 crossbeam-channel = "0.5.13"
-jpeg-decoder = "0.3.1"
 
 [build-dependencies]
 embuild = "0.31.3"
